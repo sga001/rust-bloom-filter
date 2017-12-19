@@ -1,18 +1,14 @@
 [project]
 name = "bloomfilter"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Frank Denis <github@pureftpd.org>"]
 description = "Bloom filter implementation"
 license = "ISC"
-homepage = "https://github.com/jedisct1/rust-bloom-filter"
-repository = "https://github.com/jedisct1/rust-bloom-filter"
+repository = "https://github.com/sga001/rust-bloom-filter"
 
 [lib]
-name = "bloomfilter"
-path = "src/bloomfilter/lib.rs"
 
 [dependencies]
-clippy = {version = "~0", optional = true}
-bit-vec = "~0.4"
-rand = "~0.3"
-siphasher = "^0.2.2"
+bit-vec = "0.4.4"
+rand = "0.4.1"
+metrohash = "1.0.5"

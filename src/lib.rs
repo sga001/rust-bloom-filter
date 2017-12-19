@@ -6,38 +6,27 @@
 //! 2 hash functions, generated with SipHash-1-3 using randomized keys.
 //!
 
-#![crate_name="bloomfilter"]
-#![crate_type = "rlib"]
-#![warn(non_camel_case_types, non_upper_case_globals, unused_qualifications)]
-
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-
 extern crate bit_vec;
 extern crate rand;
-extern crate siphasher;
+extern crate metrohash;
 
 use bit_vec::BitVec;
-use siphasher::sip::SipHasher13;
+use metrohash::MetroHash64;
+use std::hash::{Hash, Hasher};
 use std::cmp;
 use std::f64;
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
 
 #[cfg(test)]
 use rand::Rng;
 
 /// Bloom filter structure
-pub struct Bloom<T> {
+pub struct Bloom {
     bitmap: BitVec,
     bitmap_bits: u64,
     k_num: u32,
-    sips: [SipHasher13; 2],
-
-    _phantom: PhantomData<T>,
 }
 
-impl<T> Bloom<T> {
+impl Bloom {
     /// Create a new bloom filter structure.
     /// bitmap_size is the size in bytes (not bits) that will be allocated in memory
     /// items_count is an estimation of the maximum number of items to store.
@@ -46,13 +35,10 @@ impl<T> Bloom<T> {
         let bitmap_bits = (bitmap_size as u64) * 8u64;
         let k_num = Self::optimal_k_num(bitmap_bits, items_count);
         let bitmap = BitVec::from_elem(bitmap_bits as usize, false);
-        let sips = [Self::sip_new(), Self::sip_new()];
         Self {
             bitmap: bitmap,
             bitmap_bits: bitmap_bits,
             k_num: k_num,
-            sips: sips,
-            _phantom: PhantomData,
         }
     }
 
@@ -70,18 +56,11 @@ impl<T> Bloom<T> {
         bitmap: &[u8],
         bitmap_bits: u64,
         k_num: u32,
-        sip_keys: [(u64, u64); 2],
     ) -> Self {
-        let sips = [
-            SipHasher13::new_with_keys(sip_keys[0].0, sip_keys[0].1),
-            SipHasher13::new_with_keys(sip_keys[1].0, sip_keys[1].1),
-        ];
         Self {
             bitmap: BitVec::from_bytes(bitmap),
             bitmap_bits: bitmap_bits,
             k_num: k_num,
-            sips: sips,
-            _phantom: PhantomData,
         }
     }
 
@@ -97,7 +76,7 @@ impl<T> Bloom<T> {
     }
 
     /// Record the presence of an item.
-    pub fn set(&mut self, item: &T)
+    pub fn set<T>(&mut self, item: &T)
     where
         T: Hash,
     {
@@ -110,7 +89,7 @@ impl<T> Bloom<T> {
 
     /// Check if an item is present in the set.
     /// There can be false positives, but no false negatives.
-    pub fn check(&self, item: &T) -> bool
+    pub fn check<T>(&self, item: &T) -> bool
     where
         T: Hash,
     {
@@ -126,7 +105,7 @@ impl<T> Bloom<T> {
 
     /// Record the presence of an item in the set,
     /// and return the previous state of this item.
-    pub fn check_and_set(&mut self, item: &T) -> bool
+    pub fn check_and_set<T>(&mut self, item: &T) -> bool
     where
         T: Hash,
     {
@@ -157,11 +136,6 @@ impl<T> Bloom<T> {
         self.k_num
     }
 
-    /// Return the keys used by the sip hasher
-    pub fn sip_keys(&self) -> [(u64, u64); 2] {
-        [self.sips[0].keys(), self.sips[1].keys()]
-    }
-
     fn optimal_k_num(bitmap_bits: u64, items_count: usize) -> u32 {
         let m = bitmap_bits as f64;
         let n = items_count as f64;
@@ -169,14 +143,14 @@ impl<T> Bloom<T> {
         cmp::max(k_num, 1)
     }
 
-    fn bloom_hash(&self, hashes: &mut [u64; 2], item: &T, k_i: u32) -> u64
+    fn bloom_hash<T>(&self, hashes: &mut [u64; 2], item: &T, k_i: u32) -> u64
     where
         T: Hash,
     {
         if k_i < 2 {
-            let sip = &mut self.sips[k_i as usize].clone();
-            item.hash(sip);
-            let hash = sip.finish();
+            let mut metro = MetroHash64::with_seed(k_i as u64);
+            item.hash(&mut metro);
+            let hash = metro.finish();
             hashes[k_i as usize] = hash;
             hash
         } else {
@@ -187,11 +161,6 @@ impl<T> Bloom<T> {
     /// Clear all of the bits in the filter, removing all keys from the set
     pub fn clear(&mut self) {
         self.bitmap.clear()
-    }
-
-    fn sip_new() -> SipHasher13 {
-        let mut rng = rand::thread_rng();
-        SipHasher13::new_with_keys(rand::Rand::rand(&mut rng), rand::Rand::rand(&mut rng))
     }
 }
 
@@ -231,7 +200,6 @@ fn bloom_test_load() {
 
     let cloned = Bloom::from_existing(&original.bitmap(),
                                       original.number_of_bits(),
-                                      original.number_of_hash_functions(),
-                                      original.sip_keys());
+                                      original.number_of_hash_functions());
     assert!(cloned.check(&key) == true);
 }
